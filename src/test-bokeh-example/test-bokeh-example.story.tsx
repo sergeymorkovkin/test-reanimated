@@ -26,9 +26,15 @@ function getRandomHueDiff() {
 }
 
 function Circle() {
-  const left = useSharedValue(getRandomWidth())
-  const top = useSharedValue(getRandomHeight())
-  const hue = useSharedValue(getRandomHue())
+
+  // @ts-ignore
+  const left = useSharedValue(getRandomWidth(), true)
+
+  // @ts-ignore
+  const top = useSharedValue(getRandomHeight(), true)
+
+  // @ts-ignore
+  const hue = useSharedValue(getRandomHue(), true)
 
   const duration = 2000 + Math.random() * 1000
   const power = Math.random()
@@ -46,23 +52,24 @@ function Circle() {
     return () => clearInterval(id)
   })
 
+  const size = 100 + power * 250
+
   const animatedStyle = useAnimatedStyle(() => {
-    const size = 100 + power * 250
     return {
       backgroundColor: `hsl(${hue.value}, 100%, 50%)`,
-      width: size,
-      height: size,
-      top: top.value - size / 2,
-      left: left.value - size / 2,
+      // width: size,
+      // height: size,
+      // top: top.value - size / 2,
+      // left: left.value - size / 2,
       opacity: 0.1 + (1 - power) * 0.1,
-      // transform: [
-      //   { translateX: top.value - size / 2 },
-      //   { translateY: left.value - size / 2 },
-      // ]
+      transform: [
+        { translateX: top.value - size / 2 },
+        { translateY: left.value - size / 2 },
+      ]
     }
   }, [])
 
-  return <Animated.View style={[styles.Bokeh, animatedStyle]} />
+  return <Animated.View style={[styles.Bokeh, { width: size, height: size }, animatedStyle]} />
 }
 
 interface BokehProps {

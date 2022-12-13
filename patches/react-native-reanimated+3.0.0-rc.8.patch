@@ -1,0 +1,124 @@
+diff --git a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
+index b9a31a8..9800371 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
+@@ -206,12 +206,16 @@ void NativeReanimatedModule::scheduleOnUI(
+       shareableWorklet->valueType() == Shareable::WorkletType &&
+       "only worklets can be scheduled to run on UI");
+   auto uiRuntime = runtimeHelper->uiRuntime();
+-  frameCallbacks.push_back([=](double timestamp) {
++
++  // frameCallbacks.push_back([=](double timestamp) {
++  // See https://github.com/software-mansion/react-native-reanimated/pull/3859/files
++  scheduler->scheduleOnUI([=] {
+     jsi::Runtime &rt = *uiRuntime;
+     auto workletValue = shareableWorklet->getJSValue(rt);
+     workletValue.asObject(rt).asFunction(rt).call(rt);
+   });
+-  maybeRequestRender();
++
++  // maybeRequestRender();
+ }
+ 
+ jsi::Value NativeReanimatedModule::makeSynchronizedDataHolder(
+diff --git a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
+index 1ed79a0..14668ef 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
+@@ -30,9 +30,12 @@ void RuntimeDecorator::decorateRuntime(
+   rt.global().setProperty(
+       rt, "_LABEL", jsi::String::createFromAscii(rt, label));
+ 
+-  jsi::Object dummyGlobal(rt);
+-  dummyGlobal.setProperty(rt, "gc", rt.global().getProperty(rt, "gc"));
+-  rt.global().setProperty(rt, "global", dummyGlobal);
++  // See https://github.com/software-mansion/react-native-reanimated/pull/3838/files
++  rt.global().setProperty(rt, "global", rt.global());
++
++  // jsi::Object dummyGlobal(rt);
++  // dummyGlobal.setProperty(rt, "gc", rt.global().getProperty(rt, "gc"));
++  // rt.global().setProperty(rt, "global", dummyGlobal);
+ 
+   rt.global().setProperty(rt, "jsThis", jsi::Value::undefined());
+ 
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/core.ts b/node_modules/react-native-reanimated/src/reanimated2/core.ts
+index 68bace9..9118d76 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/core.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/core.ts
+@@ -28,7 +28,7 @@ if (global._setGlobalConsole === undefined) {
+ export type ReanimatedConsole = Pick<
+   Console,
+   'debug' | 'log' | 'warn' | 'info' | 'error'
+->;
++  >;
+ 
+ const testWorklet: BasicWorkletFunction<void> = () => {
+   'worklet';
+@@ -64,11 +64,11 @@ export const isConfiguredCheck: () => void = () => {
+ 
+ const configurationCheckWrapper = __DEV__
+   ? <T extends Array<any>, U>(fn: (...args: T) => U) => {
+-      return (...args: T): U => {
+-        isConfigured(true);
+-        return fn(...args);
+-      };
+-    }
++    return (...args: T): U => {
++      isConfigured(true);
++      return fn(...args);
++    };
++  }
+   : <T extends Array<any>, U>(fn: (...args: T) => U) => fn;
+ 
+ export const startMapper = __DEV__
+@@ -145,7 +145,6 @@ function valueUnpacker(objectToUnpack: any, category?: string): any {
+   } else if (category === 'RemoteFunction') {
+     const fun = () => {
+       throw new Error(`Tried to synchronously call a non-worklet function on the UI thread.
+-
+ Possible solutions are:
+   a) If you want to synchronously execute this method, mark it as a worklet
+   b) If you want to execute this function on the JS thread, wrap it using \`runOnJS\``);
+@@ -213,6 +212,22 @@ if (!isWeb() && isConfigured()) {
+       info: runOnJS(capturableConsole.info),
+     };
+     _setGlobalConsole(console);
++
++    const nativeRequestAnimationFrame = global.requestAnimationFrame;
++    let callbacks: Array<(time: number) => void> = [];
++    global.requestAnimationFrame = (
++      callback: (timestamp: number) => void
++    ): number => {
++      callbacks.push(callback);
++      if (callbacks.length === 1) {
++        nativeRequestAnimationFrame((timestamp) => {
++          const currentCallbacks = callbacks;
++          callbacks = [];
++          currentCallbacks.forEach((f) => f(timestamp));
++        });
++      }
++      return -1;
++    };
+   })();
+ }
+ 
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts b/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts
+index f89a69c..cc479c6 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts
+@@ -66,6 +66,7 @@ declare global {
+     now: () => number;
+   };
+   const _frameCallbackRegistry: FrameCallbackRegistryUI;
++  const requestAnimationFrame: (callback: (time: number) => void) => number;
+ 
+   namespace NodeJS {
+     interface Global {
+@@ -122,6 +123,7 @@ declare global {
+       __workletsCache?: Map<string, (...args: any[]) => any>;
+       __handleCache?: WeakMap<any, any>;
+       __mapperRegistry?: MapperRegistry;
++      requestAnimationFrame: (callback: (time: number) => void) => number;
+     }
+   }
+ }
