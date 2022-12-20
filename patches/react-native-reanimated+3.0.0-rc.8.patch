@@ -1,8 +1,17 @@
 diff --git a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
-index b9a31a8..9800371 100644
+index b9a31a8..382e984 100644
 --- a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
 +++ b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
-@@ -206,12 +206,16 @@ void NativeReanimatedModule::scheduleOnUI(
+@@ -5,6 +5,8 @@
+ #include <react/renderer/uimanager/primitives.h>
+ #endif
+ 
++#include <react/renderer/debug/SystraceSection.h>
++
+ #include <functional>
+ #include <memory>
+ #include <thread>
+@@ -206,12 +208,16 @@ void NativeReanimatedModule::scheduleOnUI(
        shareableWorklet->valueType() == Shareable::WorkletType &&
        "only worklets can be scheduled to run on UI");
    auto uiRuntime = runtimeHelper->uiRuntime();
@@ -21,11 +30,32 @@ index b9a31a8..9800371 100644
  }
  
  jsi::Value NativeReanimatedModule::makeSynchronizedDataHolder(
+diff --git a/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h b/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h
+index 0b9ff0e..70f9806 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h
++++ b/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h
+@@ -10,6 +10,8 @@
+ #include <react/renderer/uimanager/primitives.h>
+ #endif
+ 
++#include <react/renderer/debug/SystraceSection.h>
++
+ #include "ReanimatedRuntime.h"
+ #include "RuntimeManager.h"
+ #include "Scheduler.h"
 diff --git a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
-index 1ed79a0..14668ef 100644
+index 1ed79a0..0e2cbd8 100644
 --- a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
 +++ b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
-@@ -30,9 +30,12 @@ void RuntimeDecorator::decorateRuntime(
+@@ -1,5 +1,7 @@
+ #include "RuntimeDecorator.h"
++#include <android/trace.h>
+ #include <jsi/instrumentation.h>
++#include <react/renderer/debug/SystraceSection.h>
+ #include <chrono>
+ #include <memory>
+ #include <unordered_map>
+@@ -30,9 +32,12 @@ void RuntimeDecorator::decorateRuntime(
    rt.global().setProperty(
        rt, "_LABEL", jsi::String::createFromAscii(rt, label));
  
@@ -41,6 +71,197 @@ index 1ed79a0..14668ef 100644
  
    rt.global().setProperty(rt, "jsThis", jsi::Value::undefined());
  
+@@ -326,6 +331,31 @@ void RuntimeDecorator::decorateUIRuntime(
+   jsi::Value setGestureStateFunction = jsi::Function::createFromHostFunction(
+       rt, jsi::PropNameID::forAscii(rt, "_setGestureState"), 2, clb9);
+   rt.global().setProperty(rt, "_setGestureState", setGestureStateFunction);
++
++  auto clb10 = [](
++                jsi::Runtime &rt,
++                const jsi::Value &thisValue,
++                const jsi::Value *args,
++                const size_t count) -> jsi::Value {
++    ATrace_beginSection(args[0].asString(rt).utf8(rt).c_str());
++    return jsi::Value::undefined();
++  };
++  jsi::Value fun10 = jsi::Function::createFromHostFunction(
++      rt, jsi::PropNameID::forAscii(rt, "_beginSection"), 1, clb10);
++  rt.global().setProperty(rt, "_beginSection", fun10);
++
++  auto clb11 = [](
++                jsi::Runtime &rt,
++                const jsi::Value &thisValue,
++                const jsi::Value *args,
++                const size_t count) -> jsi::Value {
++    ATrace_endSection();
++    return jsi::Value::undefined();
++  };
++  jsi::Value fun11 = jsi::Function::createFromHostFunction(
++      rt, jsi::PropNameID::forAscii(rt, "_endSection"), 0, clb11);
++  rt.global().setProperty(rt, "_endSection", fun11);
++
+ }
+ 
+ } // namespace reanimated
+diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
+index 2d0b200..b5d9f87 100644
+--- a/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
++++ b/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
+@@ -1,5 +1,7 @@
+ #include "JNIHelper.h"
+ 
++#include <react/renderer/debug/SystraceSection.h>
++
+ namespace reanimated {
+ 
+ using namespace facebook::jni;
+diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
+index 2ee4404..5ec15f0 100644
+--- a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
++++ b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
+@@ -132,7 +132,7 @@ void NativeProxy::installJSIBindings(
+ #endif
+ 
+   auto getCurrentTime = [this]() {
+-    static const auto method =
++    static auto method =
+         javaPart_->getClass()->getMethod<jlong()>("getCurrentTime");
+     jlong output = method(javaPart_.get());
+     return static_cast<double>(output);
+@@ -167,7 +167,7 @@ void NativeProxy::installJSIBindings(
+                           jsi::Runtime &rt,
+                           const int viewTag,
+                           const jsi::String &propName) -> jsi::Value {
+-    auto method =
++    static auto method =
+         javaPart_->getClass()
+             ->getMethod<jni::local_ref<JString>(int, jni::local_ref<JString>)>(
+                 "obtainProp");
+@@ -430,7 +430,10 @@ void NativeProxy::updateProps(
+     jsi::Runtime &rt,
+     int viewTag,
+     const jsi::Object &props) {
+-  auto method = javaPart_->getClass()
++
++  SystraceSection s("NativeProxy::updateProps");
++
++  static auto method = javaPart_->getClass()
+                     ->getMethod<void(int, JMap<JString, JObject>::javaobject)>(
+                         "updateProps");
+   method(
+@@ -438,14 +441,14 @@ void NativeProxy::updateProps(
+ }
+ 
+ void NativeProxy::scrollTo(int viewTag, double x, double y, bool animated) {
+-  auto method =
++  static auto method =
+       javaPart_->getClass()->getMethod<void(int, double, double, bool)>(
+           "scrollTo");
+   method(javaPart_.get(), viewTag, x, y, animated);
+ }
+ 
+ std::vector<std::pair<std::string, double>> NativeProxy::measure(int viewTag) {
+-  auto method =
++  static auto method =
+       javaPart_->getClass()->getMethod<local_ref<JArrayFloat>(int)>("measure");
+   local_ref<JArrayFloat> output = method(javaPart_.get(), viewTag);
+   size_t size = output->size();
+@@ -475,7 +478,7 @@ void NativeProxy::synchronouslyUpdateUIProps(
+     jsi::Runtime &rt,
+     Tag tag,
+     const jsi::Value &props) {
+-  static const auto method =
++  static auto method =
+       javaPart_->getClass()
+           ->getMethod<void(int, jni::local_ref<ReadableMap::javaobject>)>(
+               "synchronouslyUpdateUIProps");
+@@ -499,12 +502,12 @@ int NativeProxy::registerSensor(
+       SensorSetter::newObjectCxxArgs(std::move(setter)).get());
+ }
+ void NativeProxy::unregisterSensor(int sensorId) {
+-  auto method = javaPart_->getClass()->getMethod<void(int)>("unregisterSensor");
++  static auto method = javaPart_->getClass()->getMethod<void(int)>("unregisterSensor");
+   method(javaPart_.get(), sensorId);
+ }
+ 
+ void NativeProxy::setGestureState(int handlerTag, int newState) {
+-  auto method =
++  static auto method =
+       javaPart_->getClass()->getMethod<void(int, int)>("setGestureState");
+   method(javaPart_.get(), handlerTag, newState);
+ }
+@@ -513,7 +516,7 @@ void NativeProxy::configureProps(
+     jsi::Runtime &rt,
+     const jsi::Value &uiProps,
+     const jsi::Value &nativeProps) {
+-  auto method = javaPart_->getClass()
++  static auto method = javaPart_->getClass()
+                     ->getMethod<void(
+                         ReadableNativeArray::javaobject,
+                         ReadableNativeArray::javaobject)>("configureProps");
+@@ -528,7 +531,7 @@ void NativeProxy::configureProps(
+ 
+ int NativeProxy::subscribeForKeyboardEvents(
+     std::function<void(int, int)> keyboardEventDataUpdater) {
+-  auto method = javaPart_->getClass()
++  static auto method = javaPart_->getClass()
+                     ->getMethod<int(KeyboardEventDataUpdater::javaobject)>(
+                         "subscribeForKeyboardEvents");
+   return method(
+@@ -539,7 +542,7 @@ int NativeProxy::subscribeForKeyboardEvents(
+ }
+ 
+ void NativeProxy::unsubscribeFromKeyboardEvents(int listenerId) {
+-  auto method = javaPart_->getClass()->getMethod<void(int)>(
++  static auto method = javaPart_->getClass()->getMethod<void(int)>(
+       "unsubscribeFromKeyboardEvents");
+   method(javaPart_.get(), listenerId);
+ }
+diff --git a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
+index 1d18851..83e8260 100644
+--- a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
++++ b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
+@@ -3,6 +3,7 @@ package com.swmansion.reanimated;
+ import static java.lang.Float.NaN;
+ 
+ import android.view.View;
++import com.facebook.systrace.Systrace;
+ import com.facebook.react.bridge.Arguments;
+ import com.facebook.react.bridge.GuardedRunnable;
+ import com.facebook.react.bridge.JavaOnlyMap;
+@@ -326,6 +327,9 @@ public class NodesManager implements EventDispatcherListener {
+   }
+ 
+   public void updateProps(int viewTag, Map<String, Object> props) {
++
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "updateProps");
++
+     // TODO: update PropsNode to use this method instead of its own way of updating props
+     boolean hasUIProps = false;
+     boolean hasNativeProps = false;
+@@ -364,6 +368,9 @@ public class NodesManager implements EventDispatcherListener {
+         sendEvent("onReanimatedPropsChange", evt);
+       }
+     }
++
++    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
++
+   }
+ 
+   public void synchronouslyUpdateUIProps(int viewTag, ReadableMap uiProps) {
+diff --git a/node_modules/react-native-reanimated/plugin.js b/node_modules/react-native-reanimated/plugin.js
+index b4626f3..a2bd433 100644
+--- a/node_modules/react-native-reanimated/plugin.js
++++ b/node_modules/react-native-reanimated/plugin.js
+@@ -89,6 +89,8 @@ const globals = new Set([
+   'LayoutAnimationRepository',
+   '_notifyAboutProgress',
+   '_notifyAboutEnd',
++  '_beginSection',
++  '_endSection',
+ ]);
+ 
+ // leaving way to avoid deep capturing by adding 'stopCapturing' to the blacklist
 diff --git a/node_modules/react-native-reanimated/src/reanimated2/core.ts b/node_modules/react-native-reanimated/src/reanimated2/core.ts
 index 68bace9..9118d76 100644
 --- a/node_modules/react-native-reanimated/src/reanimated2/core.ts
@@ -122,3 +343,16 @@ index f89a69c..cc479c6 100644
      }
    }
  }
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts b/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts
+index 6b4bae2..d5e3423 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts
+@@ -7,7 +7,7 @@ export function useSharedValue<T>(
+   init: T,
+   oneWayReadsOnly = false
+ ): SharedValue<T> {
+-  const ref = useRef<SharedValue<T>>(makeMutable(init, oneWayReadsOnly));
++  const ref = useRef<SharedValue<T>>(null);
+ 
+   if (ref.current === null) {
+     ref.current = makeMutable(init, oneWayReadsOnly);

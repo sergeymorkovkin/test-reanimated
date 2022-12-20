@@ -13,6 +13,7 @@ export const styles = StyleSheet.create({
   Bokeh: {
     position: 'absolute',
     borderRadius: 9999,
+    backgroundColor: 'grey',
   },
 
 })

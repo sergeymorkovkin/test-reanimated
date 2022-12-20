@@ -1,0 +1,24 @@
+diff --git a/node_modules/react-native/ReactCommon/react/renderer/debug/SystraceSection.h b/node_modules/react-native/ReactCommon/react/renderer/debug/SystraceSection.h
+index d3ccd0b..529ccde 100644
+--- a/node_modules/react-native/ReactCommon/react/renderer/debug/SystraceSection.h
++++ b/node_modules/react-native/ReactCommon/react/renderer/debug/SystraceSection.h
+@@ -37,12 +37,18 @@ struct ConcreteSystraceSection {
+ };
+ using SystraceSection = ConcreteSystraceSection;
+ #else
++#include <android/trace.h>
+ struct DummySystraceSection {
+  public:
+   template <typename... ConvertsToStringPiece>
+   explicit DummySystraceSection(
+       const char *name,
+-      ConvertsToStringPiece &&...args) {}
++      ConvertsToStringPiece &&...args) {
++      ATrace_beginSection(name);
++  }
++  ~DummySystraceSection() {
++    ATrace_endSection();
++  }
+ };
+ using SystraceSection = DummySystraceSection;
+ #endif
