@@ -56,7 +56,7 @@ function Circle() {
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      backgroundColor: `hsl(${hue.value}, 100%, 50%)`,
+      // backgroundColor: `hsl(${hue.value}, 100%, 50%)`,
       // width: size,
       // height: size,
       // top: top.value - size / 2,
