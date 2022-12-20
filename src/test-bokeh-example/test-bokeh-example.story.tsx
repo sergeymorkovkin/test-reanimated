@@ -62,10 +62,12 @@ function Circle() {
       // top: top.value - size / 2,
       // left: left.value - size / 2,
       opacity: 0.1 + (1 - power) * 0.1,
-      transform: [
-        { translateX: top.value - size / 2 },
-        { translateY: left.value - size / 2 },
-      ]
+      // transform: [
+      //   { translateX: top.value - size / 2 },
+      //   { translateY: left.value - size / 2 },
+      // ],
+      translateX: top.value - size / 2,
+      translateY: left.value - size / 2,
     }
   }, [])
 
