@@ -1,5 +1,9 @@
+diff --git a/node_modules/react-native-reanimated/.DS_Store b/node_modules/react-native-reanimated/.DS_Store
+new file mode 100644
+index 0000000..db17f12
+Binary files /dev/null and b/node_modules/react-native-reanimated/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
-index b9a31a8..382e984 100644
+index b9a31a8..5e18369 100644
 --- a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
 +++ b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
 @@ -5,6 +5,8 @@
@@ -11,7 +15,24 @@ index b9a31a8..382e984 100644
  #include <functional>
  #include <memory>
  #include <thread>
-@@ -206,12 +208,16 @@ void NativeReanimatedModule::scheduleOnUI(
+@@ -59,6 +61,7 @@ NativeReanimatedModule::NativeReanimatedModule(
+ #endif
+ {
+   auto requestAnimationFrame = [=](FrameCallback callback) {
++    SystraceSection s("requestAnimationFrame");
+     frameCallbacks.push_back(callback);
+     maybeRequestRender();
+   };
+@@ -143,6 +146,8 @@ NativeReanimatedModule::NativeReanimatedModule(
+       dispatchCommand,
+ #else
+       platformDepMethodsHolder.updatePropsFunction,
++      platformDepMethodsHolder.updateUiPropsFunction,
++      platformDepMethodsHolder.updateNativePropsFunction,
+       platformDepMethodsHolder.measureFunction,
+       platformDepMethodsHolder.scrollToFunction,
+ #endif
+@@ -206,12 +211,16 @@ void NativeReanimatedModule::scheduleOnUI(
        shareableWorklet->valueType() == Shareable::WorkletType &&
        "only worklets can be scheduled to run on UI");
    auto uiRuntime = runtimeHelper->uiRuntime();
@@ -30,6 +51,19 @@ index b9a31a8..382e984 100644
  }
  
  jsi::Value NativeReanimatedModule::makeSynchronizedDataHolder(
+diff --git a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.h b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.h
+index 1ae695b..338d522 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.h
++++ b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.h
+@@ -104,6 +104,8 @@ class NativeReanimatedModule : public NativeReanimatedModuleSpec,
+ 
+   void maybeRequestRender();
+   UpdatePropsFunction updatePropsFunction;
++  UpdateUiPropsFunction updateUiPropsFunction;
++  UpdateNativePropsFunction updateNativePropsFunction;
+ 
+   bool handleEvent(
+       const std::string &eventName,
 diff --git a/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h b/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h
 index 0b9ff0e..70f9806 100644
 --- a/node_modules/react-native-reanimated/Common/cpp/SharedItems/Shareables.h
@@ -43,11 +77,41 @@ index 0b9ff0e..70f9806 100644
  #include "ReanimatedRuntime.h"
  #include "RuntimeManager.h"
  #include "Scheduler.h"
+diff --git a/node_modules/react-native-reanimated/Common/cpp/Tools/PlatformDepMethodsHolder.h b/node_modules/react-native-reanimated/Common/cpp/Tools/PlatformDepMethodsHolder.h
+index cc91187..08b9cb4 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/Tools/PlatformDepMethodsHolder.h
++++ b/node_modules/react-native-reanimated/Common/cpp/Tools/PlatformDepMethodsHolder.h
+@@ -43,6 +43,16 @@ using UpdatePropsFunction = std::function<void(
+     int viewTag,
+     const jsi::Value &viewName,
+     const jsi::Object &object)>;
++using UpdateUiPropsFunction = std::function<void(
++    jsi::Runtime &rt,
++    int viewTag,
++    const jsi::Value &viewName,
++    const jsi::Value &uiProps)>;
++using UpdateNativePropsFunction = std::function<void(
++    jsi::Runtime &rt,
++    int viewTag,
++    const jsi::Value &viewName,
++    const jsi::Value &nativeProps)>;
+ using ScrollToFunction = std::function<void(int, double, double, bool)>;
+ using MeasureFunction =
+     std::function<std::vector<std::pair<std::string, double>>(int)>;
+@@ -75,6 +85,8 @@ struct PlatformDepMethodsHolder {
+   SynchronouslyUpdateUIPropsFunction synchronouslyUpdateUIPropsFunction;
+ #else
+   UpdatePropsFunction updatePropsFunction;
++  UpdateUiPropsFunction updateUiPropsFunction;
++  UpdateNativePropsFunction updateNativePropsFunction;
+   ScrollToFunction scrollToFunction;
+   MeasureFunction measureFunction;
+   ConfigurePropsFunction configurePropsFunction;
 diff --git a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
-index 1ed79a0..0e2cbd8 100644
+index 1ed79a0..c53f4d8 100644
 --- a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
 +++ b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.cpp
-@@ -1,5 +1,7 @@
+@@ -1,11 +1,15 @@
  #include "RuntimeDecorator.h"
 +#include <android/trace.h>
  #include <jsi/instrumentation.h>
@@ -55,7 +119,15 @@ index 1ed79a0..0e2cbd8 100644
  #include <chrono>
  #include <memory>
  #include <unordered_map>
-@@ -30,9 +32,12 @@ void RuntimeDecorator::decorateRuntime(
+ #include <utility>
+ #include "ReanimatedHiddenHeaders.h"
+ 
++using namespace facebook::react;
++
+ namespace reanimated {
+ 
+ std::unordered_map<RuntimePointer, RuntimeType>
+@@ -30,9 +34,12 @@ void RuntimeDecorator::decorateRuntime(
    rt.global().setProperty(
        rt, "_LABEL", jsi::String::createFromAscii(rt, label));
  
@@ -71,7 +143,81 @@ index 1ed79a0..0e2cbd8 100644
  
    rt.global().setProperty(rt, "jsThis", jsi::Value::undefined());
  
-@@ -326,6 +331,31 @@ void RuntimeDecorator::decorateUIRuntime(
+@@ -98,6 +105,8 @@ void RuntimeDecorator::decorateRuntime(
+ void RuntimeDecorator::decorateUIRuntime(
+     jsi::Runtime &rt,
+     const UpdatePropsFunction updateProps,
++    const UpdateUiPropsFunction updateUiProps,
++    const UpdateNativePropsFunction updateNativeProps,
+     const MeasureFunction measure,
+ #ifdef RCT_NEW_ARCH_ENABLED
+     const RemoveShadowNodeFromRegistryFunction removeShadowNodeFromRegistry,
+@@ -176,16 +185,54 @@ void RuntimeDecorator::decorateUIRuntime(
+                  const jsi::Value &thisValue,
+                  const jsi::Value *args,
+                  const size_t count) -> jsi::Value {
++    SystraceSection s("_updatePropsPaper");
+     const auto viewTag = args[0].asNumber();
+-    const jsi::Value *viewName = &args[1];
++    const auto &viewName = args[1];
+     const auto params = args[2].asObject(rt);
+-    updateProps(rt, viewTag, *viewName, params);
++    updateProps(rt, viewTag, viewName, params);
+     return jsi::Value::undefined();
+   };
+   jsi::Value updatePropsHostFunction = jsi::Function::createFromHostFunction(
+       rt, jsi::PropNameID::forAscii(rt, "_updatePropsPaper"), 3, clb);
+   rt.global().setProperty(rt, "_updatePropsPaper", updatePropsHostFunction);
+ 
++  auto clbb = [updateUiProps](
++                  jsi::Runtime &rt,
++                  const jsi::Value &thisValue,
++                  const jsi::Value *args,
++                  const size_t count) -> jsi::Value {
++    SystraceSection s("_updateUiPropsPaper");
++    const auto viewTag = args[0].asNumber();
++    const auto &viewName = args[1];
++    const auto &uiProps = args[2];
++    updateUiProps(rt, viewTag, viewName, uiProps);
++    return jsi::Value::undefined();
++  };
++  jsi::Value updateUiPropsHostFunction = jsi::Function::createFromHostFunction(
++      rt, jsi::PropNameID::forAscii(rt, "_updateUiPropsPaper"), 2, clbb);
++  rt.global().setProperty(rt, "_updateUiPropsPaper", updateUiPropsHostFunction);
++
++  auto clbbb = [updateNativeProps](
++                   jsi::Runtime &rt,
++                   const jsi::Value &thisValue,
++                   const jsi::Value *args,
++                   const size_t count) -> jsi::Value {
++    SystraceSection s("_updateNativePropsPaper");
++    const auto viewTag = args[0].asNumber();
++    const auto &viewName = args[1];
++    const auto &nativeProps = args[2];
++    updateNativeProps(rt, viewTag, viewName, nativeProps);
++    return jsi::Value::undefined();
++  };
++  jsi::Value updateNativePropsHostFunction =
++      jsi::Function::createFromHostFunction(
++          rt,
++          jsi::PropNameID::forAscii(rt, "_updateNativePropsPaper"),
++          2,
++          clbbb);
++  rt.global().setProperty(
++      rt, "_updateNativePropsPaper", updateNativePropsHostFunction);
++
+   auto _scrollTo = [scrollTo](
+                        jsi::Runtime &rt,
+                        const jsi::Value &thisValue,
+@@ -278,6 +325,7 @@ void RuntimeDecorator::decorateUIRuntime(
+                   const jsi::Value &thisValue,
+                   const jsi::Value *args,
+                   const size_t count) -> jsi::Value {
++    SystraceSection s("_getCurrentTime");
+     return getCurrentTime();
+   };
+   jsi::Value timeFun = jsi::Function::createFromHostFunction(
+@@ -326,6 +374,31 @@ void RuntimeDecorator::decorateUIRuntime(
    jsi::Value setGestureStateFunction = jsi::Function::createFromHostFunction(
        rt, jsi::PropNameID::forAscii(rt, "_setGestureState"), 2, clb9);
    rt.global().setProperty(rt, "_setGestureState", setGestureStateFunction);
@@ -103,8 +249,25 @@ index 1ed79a0..0e2cbd8 100644
  }
  
  } // namespace reanimated
+diff --git a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.h b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.h
+index 5b0f9b2..28182b7 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.h
++++ b/node_modules/react-native-reanimated/Common/cpp/Tools/RuntimeDecorator.h
+@@ -37,6 +37,8 @@ class RuntimeDecorator {
+   static void decorateUIRuntime(
+       jsi::Runtime &rt,
+       const UpdatePropsFunction updateProps,
++      const UpdateUiPropsFunction updateUiProps,
++      const UpdateNativePropsFunction updateNativeProps,
+       const MeasureFunction measure,
+ #ifdef RCT_NEW_ARCH_ENABLED
+       const RemoveShadowNodeFromRegistryFunction removeShadowNodeFromRegistry,
+diff --git a/node_modules/react-native-reanimated/android/.DS_Store b/node_modules/react-native-reanimated/android/.DS_Store
+new file mode 100644
+index 0000000..679798b
+Binary files /dev/null and b/node_modules/react-native-reanimated/android/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
-index 2d0b200..b5d9f87 100644
+index 2d0b200..6860491 100644
 --- a/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
 +++ b/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
 @@ -1,5 +1,7 @@
@@ -115,11 +278,44 @@ index 2d0b200..b5d9f87 100644
  namespace reanimated {
  
  using namespace facebook::jni;
+@@ -23,6 +25,7 @@ void JNIHelper::PropsMap::put(
+ jni::local_ref<JNIHelper::PropsMap> JNIHelper::ConvertToPropsMap(
+     jsi::Runtime &rt,
+     const jsi::Object &props) {
++  SystraceSection s("JNIHelper::ConvertToPropsMap");
+   auto map = PropsMap::create();
+ 
+   auto propNames = props.getPropertyNames(rt);
 diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
-index 2ee4404..5ec15f0 100644
+index 2ee4404..ecf13ea 100644
 --- a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
 +++ b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
-@@ -132,7 +132,7 @@ void NativeProxy::installJSIBindings(
+@@ -120,6 +120,24 @@ void NativeProxy::installJSIBindings(
+     this->updateProps(rt, viewTag, props);
+   };
+ 
++  auto updateUiPropsFunction = [this](
++                                   jsi::Runtime &rt,
++                                   int viewTag,
++                                   const jsi::Value &viewName,
++                                   const jsi::Value &uiProps) {
++    // viewName is for iOS only, we skip it here
++    this->updateUiProps(rt, viewTag, uiProps);
++  };
++
++  auto updateNativePropsFunction = [this](
++                                       jsi::Runtime &rt,
++                                       int viewTag,
++                                       const jsi::Value &viewName,
++                                       const jsi::Value &nativeProps) {
++    // viewName is for iOS only, we skip it here
++    this->updateNativeProps(rt, viewTag, nativeProps);
++  };
++
+   auto measureFunction =
+       [this](int viewTag) -> std::vector<std::pair<std::string, double>> {
+     return measure(viewTag);
+@@ -132,7 +150,7 @@ void NativeProxy::installJSIBindings(
  #endif
  
    auto getCurrentTime = [this]() {
@@ -128,7 +324,7 @@ index 2ee4404..5ec15f0 100644
          javaPart_->getClass()->getMethod<jlong()>("getCurrentTime");
      jlong output = method(javaPart_.get());
      return static_cast<double>(output);
-@@ -167,7 +167,7 @@ void NativeProxy::installJSIBindings(
+@@ -167,7 +185,7 @@ void NativeProxy::installJSIBindings(
                            jsi::Runtime &rt,
                            const int viewTag,
                            const jsi::String &propName) -> jsi::Value {
@@ -137,21 +333,77 @@ index 2ee4404..5ec15f0 100644
          javaPart_->getClass()
              ->getMethod<jni::local_ref<JString>(int, jni::local_ref<JString>)>(
                  "obtainProp");
-@@ -430,7 +430,10 @@ void NativeProxy::updateProps(
+@@ -256,6 +274,8 @@ void NativeProxy::installJSIBindings(
+       synchronouslyUpdateUIPropsFunction,
+ #else
+       updatePropsFunction,
++      updateUiPropsFunction,
++      updateNativePropsFunction,
+       scrollToFunction,
+       measureFunction,
+       configurePropsFunction,
+@@ -423,6 +443,16 @@ void NativeProxy::registerEventHandler(
+       EventHandler::newObjectCxxArgs(std::move(handler)).get());
+ }
+ 
++inline jni::local_ref<ReadableMap::javaobject> castReadableMap(
++    jni::local_ref<ReadableNativeMap::javaobject> const &nativeMap) {
++  return make_local(reinterpret_cast<ReadableMap::javaobject>(nativeMap.get()));
++}
++
++inline jni::local_ref<WritableMap::javaobject> castWritableMap(
++    jni::local_ref<WritableNativeMap::javaobject> const &nativeMap) {
++  return make_local(reinterpret_cast<WritableMap::javaobject>(nativeMap.get()));
++}
++
+ #ifdef RCT_NEW_ARCH_ENABLED
+ // nothing
+ #else
+@@ -430,22 +460,53 @@ void NativeProxy::updateProps(
      jsi::Runtime &rt,
      int viewTag,
      const jsi::Object &props) {
 -  auto method = javaPart_->getClass()
-+
+-                    ->getMethod<void(int, JMap<JString, JObject>::javaobject)>(
+-                        "updateProps");
 +  SystraceSection s("NativeProxy::updateProps");
-+
-+  static auto method = javaPart_->getClass()
-                     ->getMethod<void(int, JMap<JString, JObject>::javaobject)>(
-                         "updateProps");
++  static const auto method =
++      javaPart_->getClass()
++          ->getMethod<void(int, JMap<JString, JObject>::javaobject)>(
++              "updateProps");
    method(
-@@ -438,14 +441,14 @@ void NativeProxy::updateProps(
+       javaPart_.get(), viewTag, JNIHelper::ConvertToPropsMap(rt, props).get());
  }
  
++void NativeProxy::updateUiProps(
++    jsi::Runtime &rt,
++    int viewTag,
++    const jsi::Value &uiProps) {
++  SystraceSection s("NativeProxy::updateUiProps");
++  static const auto method =
++      javaPart_->getClass()
++          ->getMethod<void(int, jni::local_ref<ReadableMap::javaobject>)>(
++              "updateUiProps");
++  jni::local_ref<ReadableMap::javaobject> javaUiProps = castReadableMap(
++      ReadableNativeMap::newObjectCxxArgs(jsi::dynamicFromValue(rt, uiProps)));
++  method(javaPart_.get(), viewTag, javaUiProps);
++}
++
++void NativeProxy::updateNativeProps(
++    jsi::Runtime &rt,
++    int viewTag,
++    const jsi::Value &nativeProps) {
++  SystraceSection s("NativeProxy::updateNativeProps");
++  static const auto method =
++      javaPart_->getClass()
++          ->getMethod<void(int, jni::local_ref<WritableMap::javaobject>)>(
++              "updateNativeProps");
++  jni::local_ref<WritableMap::javaobject> javaNativeProps =
++      castWritableMap(WritableNativeMap::newObjectCxxArgs(
++          jsi::dynamicFromValue(rt, nativeProps)));
++  method(javaPart_.get(), viewTag, javaNativeProps);
++}
++
  void NativeProxy::scrollTo(int viewTag, double x, double y, bool animated) {
 -  auto method =
 +  static auto method =
@@ -166,7 +418,16 @@ index 2ee4404..5ec15f0 100644
        javaPart_->getClass()->getMethod<local_ref<JArrayFloat>(int)>("measure");
    local_ref<JArrayFloat> output = method(javaPart_.get(), viewTag);
    size_t size = output->size();
-@@ -475,7 +478,7 @@ void NativeProxy::synchronouslyUpdateUIProps(
+@@ -466,16 +527,11 @@ std::vector<std::pair<std::string, double>> NativeProxy::measure(int viewTag) {
+ #endif // RCT_NEW_ARCH_ENABLED
+ 
+ #ifdef RCT_NEW_ARCH_ENABLED
+-inline jni::local_ref<ReadableMap::javaobject> castReadableMap(
+-    jni::local_ref<ReadableNativeMap::javaobject> const &nativeMap) {
+-  return make_local(reinterpret_cast<ReadableMap::javaobject>(nativeMap.get()));
+-}
+-
+ void NativeProxy::synchronouslyUpdateUIProps(
      jsi::Runtime &rt,
      Tag tag,
      const jsi::Value &props) {
@@ -175,7 +436,7 @@ index 2ee4404..5ec15f0 100644
        javaPart_->getClass()
            ->getMethod<void(int, jni::local_ref<ReadableMap::javaobject>)>(
                "synchronouslyUpdateUIProps");
-@@ -499,12 +502,12 @@ int NativeProxy::registerSensor(
+@@ -499,12 +555,12 @@ int NativeProxy::registerSensor(
        SensorSetter::newObjectCxxArgs(std::move(setter)).get());
  }
  void NativeProxy::unregisterSensor(int sensorId) {
@@ -190,7 +451,7 @@ index 2ee4404..5ec15f0 100644
        javaPart_->getClass()->getMethod<void(int, int)>("setGestureState");
    method(javaPart_.get(), handlerTag, newState);
  }
-@@ -513,7 +516,7 @@ void NativeProxy::configureProps(
+@@ -513,7 +569,7 @@ void NativeProxy::configureProps(
      jsi::Runtime &rt,
      const jsi::Value &uiProps,
      const jsi::Value &nativeProps) {
@@ -199,7 +460,7 @@ index 2ee4404..5ec15f0 100644
                      ->getMethod<void(
                          ReadableNativeArray::javaobject,
                          ReadableNativeArray::javaobject)>("configureProps");
-@@ -528,7 +531,7 @@ void NativeProxy::configureProps(
+@@ -528,7 +584,7 @@ void NativeProxy::configureProps(
  
  int NativeProxy::subscribeForKeyboardEvents(
      std::function<void(int, int)> keyboardEventDataUpdater) {
@@ -208,7 +469,7 @@ index 2ee4404..5ec15f0 100644
                      ->getMethod<int(KeyboardEventDataUpdater::javaobject)>(
                          "subscribeForKeyboardEvents");
    return method(
-@@ -539,7 +542,7 @@ int NativeProxy::subscribeForKeyboardEvents(
+@@ -539,7 +595,7 @@ int NativeProxy::subscribeForKeyboardEvents(
  }
  
  void NativeProxy::unsubscribeFromKeyboardEvents(int listenerId) {
@@ -217,51 +478,332 @@ index 2ee4404..5ec15f0 100644
        "unsubscribeFromKeyboardEvents");
    method(javaPart_.get(), listenerId);
  }
+diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.h b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.h
+index d02917d..a2a71d0 100644
+--- a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.h
++++ b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.h
+@@ -188,10 +188,6 @@ class NativeProxy : public jni::HybridClass<NativeProxy> {
+   void installJSIBindings(
+       jni::alias_ref<JavaMessageQueueThread::javaobject> messageQueueThread,
+       jni::alias_ref<JFabricUIManager::javaobject> fabricUIManager);
+-  void synchronouslyUpdateUIProps(
+-      jsi::Runtime &rt,
+-      Tag viewTag,
+-      const jsi::Value &uiProps);
+ #else
+   void installJSIBindings(
+       jni::alias_ref<JavaMessageQueueThread::javaobject> messageQueueThread);
+@@ -215,9 +211,17 @@ class NativeProxy : public jni::HybridClass<NativeProxy> {
+       std::function<void(int, int)> keyboardEventDataUpdater);
+   void unsubscribeFromKeyboardEvents(int listenerId);
+ #ifdef RCT_NEW_ARCH_ENABLED
+-  // nothing
++  void synchronouslyUpdateUIProps(
++      jsi::Runtime &rt,
++      Tag viewTag,
++      const jsi::Value &uiProps);
+ #else
+   void updateProps(jsi::Runtime &rt, int viewTag, const jsi::Object &props);
++    void updateUiProps(jsi::Runtime &rt, int viewTag, const jsi::Value &uiProps);
++    void updateNativeProps(
++        jsi::Runtime &rt,
++        int viewTag,
++        const jsi::Value &nativeProps);
+   void scrollTo(int viewTag, double x, double y, bool animated);
+   std::vector<std::pair<std::string, double>> measure(int viewTag);
+ #endif
 diff --git a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
-index 1d18851..83e8260 100644
+index 1d18851..f3f340e 100644
 --- a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
 +++ b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
-@@ -3,6 +3,7 @@ package com.swmansion.reanimated;
- import static java.lang.Float.NaN;
- 
- import android.view.View;
+@@ -26,6 +26,7 @@ import com.facebook.react.uimanager.UIManagerReanimatedHelper;
+ import com.facebook.react.uimanager.events.Event;
+ import com.facebook.react.uimanager.events.EventDispatcherListener;
+ import com.facebook.react.uimanager.events.RCTEventEmitter;
 +import com.facebook.systrace.Systrace;
- import com.facebook.react.bridge.Arguments;
- import com.facebook.react.bridge.GuardedRunnable;
- import com.facebook.react.bridge.JavaOnlyMap;
-@@ -326,6 +327,9 @@ public class NodesManager implements EventDispatcherListener {
+ import com.swmansion.reanimated.layoutReanimation.AnimationsManager;
+ import java.util.ArrayList;
+ import java.util.Collections;
+@@ -184,6 +185,7 @@ public class NodesManager implements EventDispatcherListener {
+   }
+ 
+   private void performOperations() {
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "performOperations");
+     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+       mNativeProxy.performOperations();
+     } else if (!mOperationsInBatch.isEmpty()) {
+@@ -228,9 +230,13 @@ public class NodesManager implements EventDispatcherListener {
+         }
+       }
+     }
++    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
+   }
+ 
+   private void onAnimationFrame(long frameTimeNanos) {
++
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "onAnimationFrame");
++
+     currentFrameTimeMs = frameTimeNanos / 1000000.;
+ 
+     while (!mEventQueue.isEmpty()) {
+@@ -254,6 +260,7 @@ public class NodesManager implements EventDispatcherListener {
+       // enqueue next frame
+       startUpdatingOnAnimationFrame();
+     }
++    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
+   }
+ 
+   public void enqueueUpdateViewOnNativeThread(
+@@ -326,6 +333,8 @@ public class NodesManager implements EventDispatcherListener {
    }
  
    public void updateProps(int viewTag, Map<String, Object> props) {
-+
-+    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "updateProps");
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "NodesManager#updateProps");
 +
      // TODO: update PropsNode to use this method instead of its own way of updating props
      boolean hasUIProps = false;
      boolean hasNativeProps = false;
-@@ -364,6 +368,9 @@ public class NodesManager implements EventDispatcherListener {
+@@ -364,6 +373,24 @@ public class NodesManager implements EventDispatcherListener {
          sendEvent("onReanimatedPropsChange", evt);
        }
      }
 +
 +    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
++  }
 +
++  public void updateUiProps(int viewTag, ReadableMap uiProps) {
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "NodesManager#updateUiProps");
++    if (viewTag != View.NO_ID) {
++      mUIImplementation.synchronouslyUpdateViewOnUIThread(viewTag, new ReactStylesDiffMap(uiProps));
++    }
++    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
++  }
++
++  public void updateNativeProps(int viewTag, WritableMap nativeProps) {
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "NodesManager#updateNativeProps");
++    if (viewTag != View.NO_ID) {
++      enqueueUpdateViewOnNativeThread(viewTag, nativeProps, true);
++    }
++    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
    }
  
    public void synchronouslyUpdateUIProps(int viewTag, ReadableMap uiProps) {
+diff --git a/node_modules/react-native-reanimated/android/src/paper/java/com/swmansion/reanimated/NativeProxy.java b/node_modules/react-native-reanimated/android/src/paper/java/com/swmansion/reanimated/NativeProxy.java
+index 2922d41..ff72756 100644
+--- a/node_modules/react-native-reanimated/android/src/paper/java/com/swmansion/reanimated/NativeProxy.java
++++ b/node_modules/react-native-reanimated/android/src/paper/java/com/swmansion/reanimated/NativeProxy.java
+@@ -195,7 +195,17 @@ public class NativeProxy {
+   }
+ 
+   @DoNotStrip
+-  private void synchronouslyUpdateUIProps(int viewTag, ReadableMap uiProps) {
++  private void updateUiProps(int viewTag, ReadableMap uiProps) {
++    mNodesManager.updateUiProps(viewTag, uiProps);
++  }
++
++  @DoNotStrip
++  private void updateNativeProps(int viewTag, WritableMap nativeProps) {
++    mNodesManager.updateNativeProps(viewTag, nativeProps);
++  }
++
++  @DoNotStrip
++  private void synchronouslyUpdateUIProps(int viewTag, WritableMap uiProps) {
+     mNodesManager.synchronouslyUpdateUIProps(viewTag, uiProps);
+   }
+ 
+diff --git a/node_modules/react-native-reanimated/ios/.DS_Store b/node_modules/react-native-reanimated/ios/.DS_Store
+new file mode 100644
+index 0000000..4efc68b
+Binary files /dev/null and b/node_modules/react-native-reanimated/ios/.DS_Store differ
+diff --git a/node_modules/react-native-reanimated/lib/.DS_Store b/node_modules/react-native-reanimated/lib/.DS_Store
+new file mode 100644
+index 0000000..1a1b859
+Binary files /dev/null and b/node_modules/react-native-reanimated/lib/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/plugin.js b/node_modules/react-native-reanimated/plugin.js
-index b4626f3..a2bd433 100644
+index b4626f3..a3f71c0 100644
 --- a/node_modules/react-native-reanimated/plugin.js
 +++ b/node_modules/react-native-reanimated/plugin.js
-@@ -89,6 +89,8 @@ const globals = new Set([
-   'LayoutAnimationRepository',
-   '_notifyAboutProgress',
-   '_notifyAboutEnd',
+@@ -73,7 +73,11 @@ const globals = new Set([
+   '_updateDataSynchronously',
+   'eval',
+   '_updatePropsPaper',
++  '_updateUiPropsPaper',
++  '_updateNativePropsPaper',
+   '_updatePropsFabric',
 +  '_beginSection',
 +  '_endSection',
+   '_removeShadowNodeFromRegistry',
+   'RegExp',
+   'Error',
+@@ -145,6 +149,7 @@ const blacklistedFunctions = new Set([
+   'call',
+   '__callAsync',
+   'includes',
++  'has',
  ]);
  
- // leaving way to avoid deep capturing by adding 'stopCapturing' to the blacklist
+ const possibleOptFunction = new Set(['interpolate']);
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts b/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
+index 174405a..c570f33 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
+@@ -28,6 +28,105 @@ export const colorProps = [
+ 
+ export const ColorProperties = !isConfigured() ? [] : makeShareable(colorProps);
+ 
++const uiPropsSet = Object.keys({
++  opacity: true,
++  transform: true,
++  /* colors */
++  backgroundColor: true,
++  borderRightColor: true,
++  borderBottomColor: true,
++  borderColor: true,
++  borderEndColor: true,
++  borderLeftColor: true,
++  borderStartColor: true,
++  borderTopColor: true,
++  /* ios styles */
++  shadowOpacity: true,
++  shadowRadius: true,
++  /* legacy android transform properties */
++  scaleX: true,
++  scaleY: true,
++  translateX: true,
++  translateY: true,
++});
++
++const nativePropsSet = Object.keys({
++  borderBottomWidth: true,
++  borderEndWidth: true,
++  borderLeftWidth: true,
++  borderRightWidth: true,
++  borderStartWidth: true,
++  borderTopWidth: true,
++  borderWidth: true,
++  bottom: true,
++  flex: true,
++  flexGrow: true,
++  flexShrink: true,
++  height: true,
++  left: true,
++  margin: true,
++  marginBottom: true,
++  marginEnd: true,
++  marginHorizontal: true,
++  marginLeft: true,
++  marginRight: true,
++  marginStart: true,
++  marginTop: true,
++  marginVertical: true,
++  maxHeight: true,
++  maxWidth: true,
++  minHeight: true,
++  minWidth: true,
++  padding: true,
++  paddingBottom: true,
++  paddingEnd: true,
++  paddingHorizontal: true,
++  paddingLeft: true,
++  paddingRight: true,
++  paddingStart: true,
++  paddingTop: true,
++  paddingVertical: true,
++  right: true,
++  start: true,
++  top: true,
++  width: true,
++  zIndex: true,
++  borderBottomEndRadius: true,
++  borderBottomLeftRadius: true,
++  borderBottomRightRadius: true,
++  borderBottomStartRadius: true,
++  borderRadius: true,
++  borderTopEndRadius: true,
++  borderTopLeftRadius: true,
++  borderTopRightRadius: true,
++  borderTopStartRadius: true,
++  elevation: true,
++  fontSize: true,
++  lineHeight: true,
++  textShadowRadius: true,
++  letterSpacing: true,
++  /* strings */
++  display: true,
++  backfaceVisibility: true,
++  overflow: true,
++  resizeMode: true,
++  fontStyle: true,
++  fontWeight: true,
++  textAlign: true,
++  textDecorationLine: true,
++  fontFamily: true,
++  textAlignVertical: true,
++  fontVariant: true,
++  textDecorationStyle: true,
++  textTransform: true,
++  writingDirection: true,
++  /* text color */
++  color: true,
++  tintColor: true,
++  shadowColor: true,
++  placeholderTextColor: true,
++});
++
+ let updatePropsByPlatform;
+ if (shouldBeUseWeb()) {
+   updatePropsByPlatform = (
+@@ -69,18 +168,49 @@ if (shouldBeUseWeb()) {
+     ): void => {
+       'worklet';
+ 
++      if (_WORKLET) _beginSection('processColor');
+       for (const key in updates) {
+         if (ColorProperties.indexOf(key) !== -1) {
+           updates[key] = processColor(updates[key]);
+         }
+       }
++      if (_WORKLET) _endSection();
++
++      if (_WORKLET) _beginSection('classifyProps');
++      let hasNativeProps = false;
++      let hasJsProps = false;
++      for (const key of Object.keys(updates)) {
++        if (uiPropsSet.includes(key)) {
++          // do nothing
++        } else if (nativePropsSet.includes(key)) {
++          hasNativeProps = true;
++        } else {
++          hasJsProps = true;
++        }
++      }
++      if (_WORKLET) _endSection();
++
++      let nativeUpdatePropsFunction: typeof _updatePropsPaper;
++      if (!hasNativeProps && !hasJsProps) {
++        // only UI props
++        nativeUpdatePropsFunction = _updateUiPropsPaper;
++      } else if (!hasJsProps) {
++        // only UI or native props
++        nativeUpdatePropsFunction = _updateNativePropsPaper;
++      } else {
++        // has JS props, use general implementation
++        nativeUpdatePropsFunction = _updatePropsPaper;
++      }
++
++      if (_WORKLET) _beginSection('nativeUpdatePropsFunction');
+       viewDescriptors.value.forEach((viewDescriptor) => {
+-        _updatePropsPaper(
++        nativeUpdatePropsFunction(
+           viewDescriptor.tag,
+           viewDescriptor.name || 'RCTView',
+           updates
+         );
+       });
++      if (_WORKLET) _endSection();
+     };
+   }
+ }
 diff --git a/node_modules/react-native-reanimated/src/reanimated2/core.ts b/node_modules/react-native-reanimated/src/reanimated2/core.ts
 index 68bace9..9118d76 100644
 --- a/node_modules/react-native-reanimated/src/reanimated2/core.ts
@@ -324,25 +866,139 @@ index 68bace9..9118d76 100644
  }
  
 diff --git a/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts b/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts
-index f89a69c..cc479c6 100644
+index f89a69c..af9ce4e 100644
 --- a/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts
 +++ b/node_modules/react-native-reanimated/src/reanimated2/globals.d.ts
-@@ -66,6 +66,7 @@ declare global {
+@@ -45,6 +45,16 @@ declare global {
+     shadowNodeWrapper: ShadowNodeWrapper,
+     props: StyleProps | AnimatedStyle
+   ) => void;
++  const _updateUiPropsPaper: (
++    tag: number,
++    name: string,
++    updates: StyleProps | AnimatedStyle
++  ) => void;
++  const _updateNativePropsPaper: (
++    tag: number,
++    name: string,
++    updates: StyleProps | AnimatedStyle
++  ) => void;
+   const _removeShadowNodeFromRegistry: (
+     shadowNodeWrapper: ShadowNodeWrapper
+   ) => void;
+@@ -66,6 +76,9 @@ declare global {
      now: () => number;
    };
    const _frameCallbackRegistry: FrameCallbackRegistryUI;
 +  const requestAnimationFrame: (callback: (time: number) => void) => number;
++  const _beginSection: (name: string) => void;
++  const _endSection: () => void;
  
    namespace NodeJS {
      interface Global {
-@@ -122,6 +123,7 @@ declare global {
+@@ -122,6 +135,9 @@ declare global {
        __workletsCache?: Map<string, (...args: any[]) => any>;
        __handleCache?: WeakMap<any, any>;
        __mapperRegistry?: MapperRegistry;
 +      requestAnimationFrame: (callback: (time: number) => void) => number;
++      _beginSection: (name: string) => void;
++      _endSection: () => void;
      }
    }
  }
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts b/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
+index 37902a1..cf062f2 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
+@@ -21,7 +21,7 @@ import {
+   ViewDescriptorsSet,
+   ViewRefSet,
+ } from '../ViewDescriptorsSet';
+-import { isJest, shouldBeUseWeb } from '../PlatformChecker';
++import { isJest } from '../PlatformChecker';
+ import {
+   AnimationObject,
+   Timestamp,
+@@ -181,10 +181,14 @@ function styleUpdater(
+   animationsActive: SharedValue<boolean>
+ ): void {
+   'worklet';
++  if (_WORKLET) _beginSection('styleUpdater');
+   const animations = state.animations ?? {};
++  if (_WORKLET) _beginSection('updater');
+   const newValues = updater() ?? {};
++  if (_WORKLET) _endSection();
+   const oldValues = state.last;
+ 
++  if (_WORKLET) _beginSection('prepareAnimation/loop');
+   let hasAnimations = false;
+   for (const key in newValues) {
+     const value = newValues[key];
+@@ -196,6 +200,7 @@ function styleUpdater(
+       delete animations[key];
+     }
+   }
++  if (_WORKLET) _endSection();
+ 
+   if (hasAnimations) {
+     const frame = (_timestamp?: Timestamp) => {
+@@ -225,7 +230,9 @@ function styleUpdater(
+       }
+ 
+       if (updates) {
++        if (_WORKLET) _beginSection('updateProps/1');
+         updateProps(viewDescriptors, updates, maybeViewRef);
++        if (_WORKLET) _endSection();
+       }
+ 
+       if (!allFinished) {
+@@ -246,20 +253,30 @@ function styleUpdater(
+       }
+     }
+     state.last = Object.assign({}, oldValues, newValues);
++    if (_WORKLET) _beginSection('getStyleWithoutAnimations');
+     const style = getStyleWithoutAnimations(state.last);
++    if (_WORKLET) _endSection();
+     if (style) {
++      if (_WORKLET) _beginSection('updateProps/2');
+       updateProps(viewDescriptors, style, maybeViewRef);
++      if (_WORKLET) _endSection();
+     }
+   } else {
+     state.isAnimationCancelled = true;
+     state.animations = [];
+ 
++    if (_WORKLET) _beginSection('styleDiff');
+     const diff = styleDiff(oldValues, newValues);
++    if (_WORKLET) _endSection();
+     state.last = Object.assign({}, oldValues, newValues);
+     if (diff) {
++      if (_WORKLET) _beginSection('updateProps/3');
+       updateProps(viewDescriptors, newValues, maybeViewRef);
++      if (_WORKLET) _endSection();
+     }
+   }
++
++  if (_WORKLET) _endSection();
+ }
+ 
+ function jestStyleUpdater(
+@@ -460,15 +477,6 @@ export function useAnimatedStyle<T extends AnimatedStyle>(
+       };
+     }
+ 
+-    if (!shouldBeUseWeb()) {
+-      updaterFn = () => {
+-        'worklet';
+-        const style = updaterFn();
+-        parseColors(style);
+-        return style;
+-      };
+-    }
+-
+     if (isJest()) {
+       fun = () => {
+         'worklet';
 diff --git a/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts b/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts
 index 6b4bae2..d5e3423 100644
 --- a/node_modules/react-native-reanimated/src/reanimated2/hook/useSharedValue.ts
