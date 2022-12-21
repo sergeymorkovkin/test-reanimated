@@ -90,7 +90,7 @@ function Bokeh({ count }: BokehProps) {
 
 export function TestBokehExampleStory() {
 
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState(100)
 
   const handleCollectGarbage = useCallback(() => {
     // @ts-ignore
