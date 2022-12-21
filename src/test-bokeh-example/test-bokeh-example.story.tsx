@@ -1,6 +1,6 @@
-import React from 'react'
-import { Dimensions, View } from 'react-native'
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
+import React, { useCallback, useState } from "react";
+import { Dimensions, View, Button } from 'react-native'
+import Animated, { Easing, runOnUI, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { styles } from './test-bokeh-example.styles'
 
 const { width, height } = Dimensions.get('window')
@@ -89,9 +89,30 @@ function Bokeh({ count }: BokehProps) {
 }
 
 export function TestBokehExampleStory() {
+
+  const [count, setCount] = useState(0)
+
+  const handleCollectGarbage = useCallback(() => {
+    // @ts-ignore
+    global.gc()
+    runOnUI(() => {
+      'worklet'
+      // @ts-ignore
+      global.gc()
+    })
+  }, [])
+
+  const handleResetElements = useCallback(() => {
+    setCount(0)
+    setTimeout(() => setCount(100), 1000)
+  }, [])
+
   return (
     <View style={styles.Container}>
-      <Bokeh count={100} />
+      <Bokeh count={count} />
+      <Button onPress={() => handleCollectGarbage()} title={'GC'} />
+      <Button onPress={() => handleResetElements()} title={'RESET'} />
     </View>
   )
+
 }
