@@ -1,11 +1,10 @@
 diff --git a/node_modules/react-native-reanimated/.DS_Store b/node_modules/react-native-reanimated/.DS_Store
 new file mode 100644
-index 0000000..f03b68d
+index 0000000..5bac826
 Binary files /dev/null and b/node_modules/react-native-reanimated/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/Common/.DS_Store b/node_modules/react-native-reanimated/Common/.DS_Store
 new file mode 100644
-index 0000000..696446c
-Binary files /dev/null and b/node_modules/react-native-reanimated/Common/.DS_Store differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp b/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
 index b9a31a8..6638c6f 100644
 --- a/node_modules/react-native-reanimated/Common/cpp/NativeModules/NativeReanimatedModule.cpp
@@ -259,7 +258,7 @@ index 5b0f9b2..28182b7 100644
        const RemoveShadowNodeFromRegistryFunction removeShadowNodeFromRegistry,
 diff --git a/node_modules/react-native-reanimated/android/.DS_Store b/node_modules/react-native-reanimated/android/.DS_Store
 new file mode 100644
-index 0000000..0718ce0
+index 0000000..fef755f
 Binary files /dev/null and b/node_modules/react-native-reanimated/android/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/JNIHelper.cpp
 index 2d0b200..b5d9f87 100644
@@ -500,7 +499,7 @@ index d02917d..a2a71d0 100644
    std::vector<std::pair<std::string, double>> measure(int viewTag);
  #endif
 diff --git a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
-index 1d18851..b6dbb28 100644
+index 1d18851..3b187d0 100644
 --- a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
 +++ b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.java
 @@ -26,6 +26,7 @@ import com.facebook.react.uimanager.UIManagerReanimatedHelper;
@@ -511,15 +510,26 @@ index 1d18851..b6dbb28 100644
  import com.swmansion.reanimated.layoutReanimation.AnimationsManager;
  import java.util.ArrayList;
  import java.util.Collections;
-@@ -231,6 +232,7 @@ public class NodesManager implements EventDispatcherListener {
+@@ -231,6 +232,9 @@ public class NodesManager implements EventDispatcherListener {
    }
  
    private void onAnimationFrame(long frameTimeNanos) {
 +
++    Systrace.beginSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE, "NodesManager::onAnimationFrame/JAVA");
++
      currentFrameTimeMs = frameTimeNanos / 1000000.;
  
      while (!mEventQueue.isEmpty()) {
-@@ -326,6 +328,8 @@ public class NodesManager implements EventDispatcherListener {
+@@ -254,6 +258,8 @@ public class NodesManager implements EventDispatcherListener {
+       // enqueue next frame
+       startUpdatingOnAnimationFrame();
+     }
++
++    Systrace.endSection(Systrace.TRACE_TAG_REACT_JAVA_BRIDGE);
+   }
+ 
+   public void enqueueUpdateViewOnNativeThread(
+@@ -326,6 +332,8 @@ public class NodesManager implements EventDispatcherListener {
    }
  
    public void updateProps(int viewTag, Map<String, Object> props) {
@@ -528,7 +538,7 @@ index 1d18851..b6dbb28 100644
      // TODO: update PropsNode to use this method instead of its own way of updating props
      boolean hasUIProps = false;
      boolean hasNativeProps = false;
-@@ -364,6 +368,24 @@ public class NodesManager implements EventDispatcherListener {
+@@ -364,6 +372,24 @@ public class NodesManager implements EventDispatcherListener {
          sendEvent("onReanimatedPropsChange", evt);
        }
      }
@@ -598,11 +608,11 @@ index 2922d41..ff72756 100644
  
 diff --git a/node_modules/react-native-reanimated/ios/.DS_Store b/node_modules/react-native-reanimated/ios/.DS_Store
 new file mode 100644
-index 0000000..06ec4ca
+index 0000000..1a4407e
 Binary files /dev/null and b/node_modules/react-native-reanimated/ios/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/lib/.DS_Store b/node_modules/react-native-reanimated/lib/.DS_Store
 new file mode 100644
-index 0000000..fb1c9d2
+index 0000000..9354eaa
 Binary files /dev/null and b/node_modules/react-native-reanimated/lib/.DS_Store differ
 diff --git a/node_modules/react-native-reanimated/plugin.js b/node_modules/react-native-reanimated/plugin.js
 index b4626f3..a3f71c0 100644
@@ -630,13 +640,12 @@ index b4626f3..a3f71c0 100644
  const possibleOptFunction = new Set(['interpolate']);
 diff --git a/node_modules/react-native-reanimated/src/.DS_Store b/node_modules/react-native-reanimated/src/.DS_Store
 new file mode 100644
-index 0000000..435fd10
-Binary files /dev/null and b/node_modules/react-native-reanimated/src/.DS_Store differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts b/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
-index 174405a..1acaf6b 100644
+index 174405a..96009fd 100644
 --- a/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
 +++ b/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
-@@ -28,6 +28,105 @@ export const colorProps = [
+@@ -28,6 +28,106 @@ export const colorProps = [
  
  export const ColorProperties = !isConfigured() ? [] : makeShareable(colorProps);
  
@@ -660,6 +669,7 @@ index 174405a..1acaf6b 100644
 +  scaleY: true,
 +  translateX: true,
 +  translateY: true,
++  rotation: true,
 +});
 +
 +const nativePropsSet = Object.keys({
@@ -742,7 +752,7 @@ index 174405a..1acaf6b 100644
  let updatePropsByPlatform;
  if (shouldBeUseWeb()) {
    updatePropsByPlatform = (
-@@ -69,18 +168,47 @@ if (shouldBeUseWeb()) {
+@@ -69,18 +169,47 @@ if (shouldBeUseWeb()) {
      ): void => {
        'worklet';
  
@@ -894,7 +904,7 @@ index f89a69c..af9ce4e 100644
    }
  }
 diff --git a/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts b/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
-index 37902a1..4f78046 100644
+index 37902a1..746e41f 100644
 --- a/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
 +++ b/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
 @@ -21,7 +21,7 @@ import {
@@ -906,15 +916,24 @@ index 37902a1..4f78046 100644
  import {
    AnimationObject,
    Timestamp,
-@@ -260,6 +260,7 @@ function styleUpdater(
+@@ -181,6 +181,7 @@ function styleUpdater(
+   animationsActive: SharedValue<boolean>
+ ): void {
+   'worklet';
++  if (_WORKLET) _beginSection('styleUpdater/JS');
+   const animations = state.animations ?? {};
+   const newValues = updater() ?? {};
+   const oldValues = state.last;
+@@ -260,6 +261,8 @@ function styleUpdater(
        updateProps(viewDescriptors, newValues, maybeViewRef);
      }
    }
 +
++  if (_WORKLET) _endSection();
  }
  
  function jestStyleUpdater(
-@@ -460,15 +461,6 @@ export function useAnimatedStyle<T extends AnimatedStyle>(
+@@ -460,15 +463,6 @@ export function useAnimatedStyle<T extends AnimatedStyle>(
        };
      }
  
