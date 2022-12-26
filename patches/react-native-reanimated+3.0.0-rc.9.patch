@@ -1,7 +1,6 @@
 diff --git a/node_modules/react-native-reanimated/.DS_Store b/node_modules/react-native-reanimated/.DS_Store
 new file mode 100644
-index 0000000..ea87b85
-Binary files /dev/null and b/node_modules/react-native-reanimated/.DS_Store differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-reanimated/Common/.DS_Store b/node_modules/react-native-reanimated/Common/.DS_Store
 new file mode 100644
 index 0000000..e69de29
@@ -231,10 +230,9 @@ index f1d8cdd..922046a 100644
        const RemoveShadowNodeFromRegistryFunction removeShadowNodeFromRegistry,
 diff --git a/node_modules/react-native-reanimated/android/.DS_Store b/node_modules/react-native-reanimated/android/.DS_Store
 new file mode 100644
-index 0000000..2771d11
-Binary files /dev/null and b/node_modules/react-native-reanimated/android/.DS_Store differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-reanimated/android/build.gradle b/node_modules/react-native-reanimated/android/build.gradle
-index b7cdd22..def32d5 100644
+index b7cdd22..325470b 100644
 --- a/node_modules/react-native-reanimated/android/build.gradle
 +++ b/node_modules/react-native-reanimated/android/build.gradle
 @@ -448,7 +448,7 @@ apply plugin: "de.undercouch.download"
@@ -259,7 +257,7 @@ index 2d0b200..b5d9f87 100644
  
  using namespace facebook::jni;
 diff --git a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
-index 2ee4404..c1910b1 100644
+index 2ee4404..b70a189 100644
 --- a/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
 +++ b/node_modules/react-native-reanimated/android/src/main/cpp/NativeProxy.cpp
 @@ -120,6 +120,24 @@ void NativeProxy::installJSIBindings(
@@ -340,7 +338,7 @@ index 2ee4404..c1910b1 100644
  #ifdef RCT_NEW_ARCH_ENABLED
  // nothing
  #else
-@@ -430,22 +460,52 @@ void NativeProxy::updateProps(
+@@ -430,22 +460,50 @@ void NativeProxy::updateProps(
      jsi::Runtime &rt,
      int viewTag,
      const jsi::Object &props) {
@@ -359,7 +357,6 @@ index 2ee4404..c1910b1 100644
 +    jsi::Runtime &rt,
 +    int viewTag,
 +    const jsi::Value &uiProps) {
-+  SystraceSection s("NativeProxy::updateUiProps");
 +  static const auto method =
 +      javaPart_->getClass()
 +          ->getMethod<void(int, jni::local_ref<ReadableMap::javaobject>)>(
@@ -373,7 +370,6 @@ index 2ee4404..c1910b1 100644
 +    jsi::Runtime &rt,
 +    int viewTag,
 +    const jsi::Value &nativeProps) {
-+  SystraceSection s("NativeProxy::updateNativeProps");
 +  static const auto method =
 +      javaPart_->getClass()
 +          ->getMethod<void(int, jni::local_ref<WritableMap::javaobject>)>(
@@ -398,7 +394,7 @@ index 2ee4404..c1910b1 100644
        javaPart_->getClass()->getMethod<local_ref<JArrayFloat>(int)>("measure");
    local_ref<JArrayFloat> output = method(javaPart_.get(), viewTag);
    size_t size = output->size();
-@@ -466,10 +526,10 @@ std::vector<std::pair<std::string, double>> NativeProxy::measure(int viewTag) {
+@@ -466,10 +524,10 @@ std::vector<std::pair<std::string, double>> NativeProxy::measure(int viewTag) {
  #endif // RCT_NEW_ARCH_ENABLED
  
  #ifdef RCT_NEW_ARCH_ENABLED
@@ -413,7 +409,7 @@ index 2ee4404..c1910b1 100644
  
  void NativeProxy::synchronouslyUpdateUIProps(
      jsi::Runtime &rt,
-@@ -489,7 +549,7 @@ int NativeProxy::registerSensor(
+@@ -489,7 +547,7 @@ int NativeProxy::registerSensor(
      int sensorType,
      int interval,
      std::function<void(double[])> setter) {
@@ -422,7 +418,7 @@ index 2ee4404..c1910b1 100644
        javaPart_->getClass()->getMethod<int(int, int, SensorSetter::javaobject)>(
            "registerSensor");
    return method(
-@@ -499,12 +559,12 @@ int NativeProxy::registerSensor(
+@@ -499,12 +557,12 @@ int NativeProxy::registerSensor(
        SensorSetter::newObjectCxxArgs(std::move(setter)).get());
  }
  void NativeProxy::unregisterSensor(int sensorId) {
@@ -437,7 +433,7 @@ index 2ee4404..c1910b1 100644
        javaPart_->getClass()->getMethod<void(int, int)>("setGestureState");
    method(javaPart_.get(), handlerTag, newState);
  }
-@@ -513,7 +573,7 @@ void NativeProxy::configureProps(
+@@ -513,7 +571,7 @@ void NativeProxy::configureProps(
      jsi::Runtime &rt,
      const jsi::Value &uiProps,
      const jsi::Value &nativeProps) {
@@ -446,7 +442,7 @@ index 2ee4404..c1910b1 100644
                      ->getMethod<void(
                          ReadableNativeArray::javaobject,
                          ReadableNativeArray::javaobject)>("configureProps");
-@@ -528,7 +588,7 @@ void NativeProxy::configureProps(
+@@ -528,7 +586,7 @@ void NativeProxy::configureProps(
  
  int NativeProxy::subscribeForKeyboardEvents(
      std::function<void(int, int)> keyboardEventDataUpdater) {
@@ -455,7 +451,7 @@ index 2ee4404..c1910b1 100644
                      ->getMethod<int(KeyboardEventDataUpdater::javaobject)>(
                          "subscribeForKeyboardEvents");
    return method(
-@@ -539,7 +599,7 @@ int NativeProxy::subscribeForKeyboardEvents(
+@@ -539,7 +597,7 @@ int NativeProxy::subscribeForKeyboardEvents(
  }
  
  void NativeProxy::unsubscribeFromKeyboardEvents(int listenerId) {
@@ -551,14 +547,12 @@ index 2922d41..ff72756 100644
  
 diff --git a/node_modules/react-native-reanimated/ios/.DS_Store b/node_modules/react-native-reanimated/ios/.DS_Store
 new file mode 100644
-index 0000000..3fd2bfc
-Binary files /dev/null and b/node_modules/react-native-reanimated/ios/.DS_Store differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-reanimated/lib/.DS_Store b/node_modules/react-native-reanimated/lib/.DS_Store
 new file mode 100644
-index 0000000..7184f91
-Binary files /dev/null and b/node_modules/react-native-reanimated/lib/.DS_Store differ
+index 0000000..e69de29
 diff --git a/node_modules/react-native-reanimated/plugin.js b/node_modules/react-native-reanimated/plugin.js
-index 5274aaf..cd6cee7 100644
+index 5274aaf..fb667f5 100644
 --- a/node_modules/react-native-reanimated/plugin.js
 +++ b/node_modules/react-native-reanimated/plugin.js
 @@ -73,7 +73,11 @@ const globals = new Set([
