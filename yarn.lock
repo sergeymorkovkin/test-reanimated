@@ -6235,13 +6235,14 @@
   "resolved" "https://registry.npmjs.org/react-native-pager-view/-/react-native-pager-view-6.1.2.tgz"
   "version" "6.1.2"
 
-"react-native-reanimated@^3.0.0-rc.8":
-  "integrity" "sha512-OE9HUSfKqYfKeTlDExd2ltZXXeL4cvPcTzKGeDLxlmm2kCgbwV8bX1gNanDZ1FlURGD2lhGvDyHAA2pQvJ0wVg=="
-  "resolved" "https://registry.npmjs.org/react-native-reanimated/-/react-native-reanimated-3.0.0-rc.8.tgz"
-  "version" "3.0.0-rc.8"
+"react-native-reanimated@^3.0.0-rc.9":
+  "integrity" "sha512-n0xlETpPQF5duyjneGkgA2YwbN3Bshldg1mH9wB+zqKOlYItq1w1Q2dqn6rVXoC2Gh/c+d2xhbabI/dipocB7g=="
+  "resolved" "https://registry.npmjs.org/react-native-reanimated/-/react-native-reanimated-3.0.0-rc.9.tgz"
+  "version" "3.0.0-rc.9"
   dependencies:
     "@babel/plugin-transform-object-assign" "^7.16.7"
     "@babel/preset-typescript" "^7.16.7"
+    "convert-source-map" "^1.7.0"
     "invariant" "^2.2.4"
     "lodash.isequal" "^4.5.0"
     "setimmediate" "^1.0.5"

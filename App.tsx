@@ -1,2 +1,2 @@
-import App from './AppBasic'
+import App from './AppNavigation'
 export default App
