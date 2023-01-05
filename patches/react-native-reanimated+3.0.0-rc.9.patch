@@ -1,0 +1,155 @@
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts b/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
+index 174405a..aa6960e 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/UpdateProps.ts
+@@ -1,4 +1,4 @@
+-/* global _updatePropsPaper _updatePropsFabric */
++/* global _updatePropsPaper _updatePropsBatchedPaper _updatePropsFabric */
+ import { MutableRefObject } from 'react';
+ import { processColor } from './Colors';
+ import { AnimatedStyle, SharedValue, StyleProps } from './commonTypes';
+@@ -7,6 +7,7 @@ import { Descriptor } from './hook/commonTypes';
+ import { _updatePropsJS } from './js-reanimated';
+ import { shouldBeUseWeb } from './PlatformChecker';
+ import { ViewRefSet } from './ViewDescriptorsSet';
++import { _beginSection, _endSection } from './core';
+ 
+ // copied from react-native/Libraries/Components/View/ReactNativeStyleAttributes
+ export const colorProps = [
+@@ -69,11 +70,15 @@ if (shouldBeUseWeb()) {
+     ): void => {
+       'worklet';
+ 
++      _beginSection('processColor');
+       for (const key in updates) {
+         if (ColorProperties.indexOf(key) !== -1) {
+           updates[key] = processColor(updates[key]);
+         }
+       }
++      _endSection();
++
++      _beginSection('updateProps');
+       viewDescriptors.value.forEach((viewDescriptor) => {
+         _updatePropsPaper(
+           viewDescriptor.tag,
+@@ -81,6 +86,7 @@ if (shouldBeUseWeb()) {
+           updates
+         );
+       });
++      _endSection();
+     };
+   }
+ }
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/core.ts b/node_modules/react-native-reanimated/src/reanimated2/core.ts
+index f1a19e0..40cb1f0 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/core.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/core.ts
+@@ -199,3 +199,62 @@ export function configureProps(uiProps: string[], nativeProps: string[]): void {
+     NativeReanimatedModule.configureProps(uiProps, nativeProps);
+   }
+ }
++
++export function _beginSection(label: string, limit: number = 50000) {
++  'worklet';
++
++  if (!global._WORKLET) return;
++
++  if (!global['profiling']) global['profiling'] = {};
++  if (!global['callStack']) global['callStack'] = [];
++
++  const profiling: any = global['profiling'];
++  const callStack: any = global['callStack'];
++
++  const section = (!profiling[label]) ?
++    (profiling[label] = { label, limit, ticks: [] }) :
++    (profiling[label]);
++
++  section.start = performance.now();
++
++  callStack.unshift(section);
++
++  // console.log('_beginSection, callStack.length: ', callStack.length);
++
++}
++
++export function _endSection() {
++  'worklet';
++
++  if (!global._WORKLET) return;
++
++  const profiling: any = global['profiling'];
++  const callStack: any = global['callStack'];
++
++  // console.log('_endSection, callStack.length: ', callStack.length);
++
++  const section = callStack.shift();
++  const ticks = section.ticks;
++
++  ticks.push(performance.now() - section.start);
++
++  if (ticks.length >= section.limit) {
++
++    let max = ticks[0];
++    let min = ticks[0];
++    let sum = ticks[0];
++    let cnt = ticks.length;
++
++    for (var i = 1; i < ticks.length; i++) {
++      if (ticks[i] > max) max = ticks[i];
++      if (ticks[i] < min) min = ticks[i];
++      sum = sum + ticks[i];
++    }
++
++    console.info(`Section ${section.label}: ${sum / cnt}ms * ${cnt} = ${sum}ms, min = ${min}ms, max = ${max}ms`)
++
++    delete profiling[section.label];
++
++  }
++
++}
+diff --git a/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts b/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
+index 50533d1..6677c4d 100644
+--- a/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
++++ b/node_modules/react-native-reanimated/src/reanimated2/hook/useAnimatedStyle.ts
+@@ -2,6 +2,7 @@
+ import { MutableRefObject, useEffect, useRef } from 'react';
+ 
+ import { startMapper, stopMapper, makeRemote, getTimestamp } from '../core';
++import { _beginSection, _endSection } from '../core';
+ import updateProps, { updatePropsJestWrapper } from '../UpdateProps';
+ import { initialUpdaterRun } from '../animation';
+ import NativeReanimatedModule from '../NativeReanimated';
+@@ -180,10 +181,14 @@ function styleUpdater(
+   animationsActive: SharedValue<boolean>
+ ): void {
+   'worklet';
++
+   const animations = state.animations ?? {};
++  _beginSection('updater');
+   const newValues = updater() ?? {};
++  _endSection();
+   const oldValues = state.last;
+ 
++  _beginSection('prepareAnimation');
+   let hasAnimations = false;
+   for (const key in newValues) {
+     const value = newValues[key];
+@@ -195,6 +200,7 @@ function styleUpdater(
+       delete animations[key];
+     }
+   }
++  _endSection();
+ 
+   if (hasAnimations) {
+     const frame = (_timestamp?: Timestamp) => {
+@@ -253,7 +259,10 @@ function styleUpdater(
+     state.isAnimationCancelled = true;
+     state.animations = [];
+ 
++    _beginSection('styleDiff');
+     const diff = styleDiff(oldValues, newValues);
++    _endSection();
++
+     state.last = Object.assign({}, oldValues, newValues);
+     if (diff) {
+       updateProps(viewDescriptors, newValues, maybeViewRef);

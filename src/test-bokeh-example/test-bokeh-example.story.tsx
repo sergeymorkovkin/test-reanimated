@@ -36,7 +36,7 @@ function Circle() {
   // @ts-ignore
   const hue = useSharedValue(getRandomHue(), true)
 
-  const duration = 2000 + Math.random() * 1000
+  const duration = 250 // 2000 + Math.random() * 1000
   const power = Math.random()
   const config = { duration, easing: Easing.linear }
 

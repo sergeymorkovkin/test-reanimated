@@ -11,14 +11,9 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "@react-navigation/material-top-tabs": "^6.5.1",
-    "@react-navigation/native": "^6.1.1",
     "react": "18.1.0",
     "react-native": "0.70.6",
-    "react-native-pager-view": "^6.1.2",
-    "react-native-reanimated": "^3.0.0-rc.9",
-    "react-native-safe-area-context": "^4.4.1",
-    "react-native-screens": "^3.18.2"
+    "react-native-reanimated": "^3.0.0-rc.9"
   },
   "devDependencies": {
     "@babel/core": "^7.12.9",
